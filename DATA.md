@@ -47,6 +47,7 @@ Auth headers are replaced with `***REDACTED***`.
 - `serp` → `serp-rapidapi` (SERP (RapidAPI))
 - `linkup_fast` → `linkup-fast` (Linkup fast)
 - `linkup_standard` → `linkup-standard` (Linkup standard)
+- `telnyx_web_search` → `telnyx-web-search` (Telnyx Web Search)
 
 Excluded from this snapshot: `parallel_turbo`, `tavily_ultrafast`, `seltz_companies`.
 

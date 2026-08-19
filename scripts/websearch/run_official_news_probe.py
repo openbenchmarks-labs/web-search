@@ -70,6 +70,7 @@ UNIT_COST_USD = {
     "serp": 0.003,
     "linkup_fast": 0.005,
     "linkup_standard": 0.005,
+    "telnyx_web_search": 0.005,
     "openai_input_per_m": 0.40,
     "openai_output_per_m": 1.60,
 }
@@ -87,6 +88,7 @@ ENDPOINTS = (
     "serp",
     "linkup_fast",
     "linkup_standard",
+    "telnyx_web_search",
 )
 
 ENDPOINT_MAP = {
@@ -105,6 +107,7 @@ ENDPOINT_MAP = {
     "serp": "GET https://google-search74.p.rapidapi.com/ query limit=10",
     "linkup_fast": "POST https://api.linkup.so/v1/search depth=fast outputType=searchResults maxResults=10",
     "linkup_standard": "POST https://api.linkup.so/v1/search depth=standard outputType=searchResults maxResults=10",
+    "telnyx_web_search": "POST https://api.telnyx.com/v2/web_search count=10",
 }
 
 ENDPOINT_ENV = {
@@ -123,6 +126,7 @@ ENDPOINT_ENV = {
     "serp": ("RAPIDAPI_KEY",),
     "linkup_fast": ("LINKUP_API_KEY",),
     "linkup_standard": ("LINKUP_API_KEY",),
+    "telnyx_web_search": ("TELNYX_API_KEY",),
 }
 
 
@@ -302,6 +306,20 @@ def _parse_linkup(payload: Any) -> list[dict[str, Any]]:
         if item.get("type") == "image":
             continue
         hits.append(_hit(item["url"], item.get("name") or item.get("title"), item.get("content") or item.get("snippet")))
+    return _dedupe(hits)
+
+
+def _parse_telnyx(payload: Any) -> list[dict[str, Any]]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    results = (data or {}).get("results") or {}
+    rows = results.get("web") or []
+    hits = []
+    for item in rows:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        snippets = item.get("snippets") or []
+        snippet = "\n".join(s for s in snippets if isinstance(s, str)) or item.get("description")
+        hits.append(_hit(item["url"], item.get("title"), snippet))
     return _dedupe(hits)
 
 
@@ -500,6 +518,20 @@ def call_endpoint(name: str, question: str, case: dict[str, Any]) -> tuple[list[
         )
         hits = _parse_linkup(raw.get("response")) if raw["ok"] else []
         return hits, raw
+    if name == "telnyx_web_search":
+        raw = _http(
+            method="POST",
+            url="https://api.telnyx.com/v2/web_search",
+            headers={
+                "Authorization": f"Bearer {os.environ['TELNYX_API_KEY']}",
+                "Content-Type": "application/json",
+            },
+            body={"query": question, "count": MAX_RESULTS},
+            params=None,
+            timeout=45,
+        )
+        hits = _parse_telnyx(raw.get("response")) if raw["ok"] else []
+        return hits, raw
     raise KeyError(name)
 
 
@@ -536,7 +568,7 @@ def run_case(client: Any, model: str, case: dict[str, Any], endpoints: list[str]
             {
                 "kind": "vendor_search",
                 "vendor": name,
-                "usd": UNIT_COST_USD[name] if billed else 0.0,
+                "usd": UNIT_COST_USD.get(name, 0.0) if billed else 0.0,
                 "ok": raw["ok"],
                 "status_code": raw.get("status_code"),
                 "latency_ms": raw.get("latency_ms"),
